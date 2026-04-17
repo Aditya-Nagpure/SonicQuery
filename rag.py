@@ -1,60 +1,36 @@
 import os
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
-import anthropic
+
+from groq import Groq
 
 
-_model = SentenceTransformer("all-MiniLM-L6-v2")
-
-
-def build_index(chunks: list[dict]) -> tuple[faiss.Index, list[dict]]:
+def summarize(segments: list[dict]) -> str:
     """
-    Embed chunks and store in a FAISS index.
-
-    Returns (index, chunks) — chunks kept in sync with index row order.
+    Concatenate all transcript segments and ask Groq for a structured summary.
     """
-    texts = [c["text"] for c in chunks]
-    embeddings = _model.encode(texts, convert_to_numpy=True)
-
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
-
-    return index, chunks
-
-
-def retrieve(query: str, index: faiss.Index, chunks: list[dict], top_k: int = 3) -> list[dict]:
-    """
-    Return the top_k most relevant chunks for a query.
-    """
-    query_vec = _model.encode([query], convert_to_numpy=True)
-    _, indices = index.search(query_vec, top_k)
-    return [chunks[i] for i in indices[0] if i < len(chunks)]
-
-
-def answer(query: str, retrieved: list[dict]) -> str:
-    """
-    Build a prompt from retrieved chunks and call Claude for an answer.
-    """
-    context = "\n\n".join(
-        f"[{c['start']:.1f}s - {c['end']:.1f}s]: {c['text']}"
-        for c in retrieved
+    transcript = "\n".join(
+        f"[{s['start']:.1f}s] {s['text']}" for s in segments
     )
 
-    prompt = f"""You are answering questions about a transcript.
+    prompt = f"""You are summarizing a transcript. Structure your response as:
 
-Context:
-{context}
+**Summary**
+A concise 3–5 sentence overview of the content.
 
-Question: {query}
+**Key Points**
+- Bullet the main topics or ideas covered.
 
-Answer concisely using only the context above."""
+**Notable Moments**
+- Call out any specific timestamps worth revisiting, with a short reason.
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
+Transcript:
+{transcript}"""
+
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=1024,
+        temperature=0.3,
     )
 
-    return message.content[0].text
+    return response.choices[0].message.content

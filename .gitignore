@@ -1,11 +1,15 @@
 .DS_Store
-
+.env
+data/
 /.venv
-__pycache__
+__pycache__/
 *.pyc
-*.pyo   
+*.pyo
+*.pt
 
 .qodo
 /.qodo
+.transcript_cache/
 
 plan.md
+INTERVIEW_PREP.md
